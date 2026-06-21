@@ -1,0 +1,227 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Orbitron', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --color-bg-primary: #0F172A;
+  --color-bg-secondary: #1E293B;
+  --color-bg-tertiary: #334155;
+
+  --color-neon-blue: #3B82F6;
+  --color-neon-green: #10B981;
+  --color-neon-orange: #F59E0B;
+  --color-neon-red: #EF4444;
+  --color-neon-purple: #8B5CF6;
+  --color-neon-cyan: #06B6D4;
+
+  --color-rarity-common: #6B7280;
+  --color-rarity-uncommon: #10B981;
+  --color-rarity-rare: #3B82F6;
+  --color-rarity-epic: #8B5CF6;
+  --color-rarity-legendary: #F59E0B;
+
+  --color-border-subtle: rgba(255, 255, 255, 0.1);
+  --color-border-moderate: rgba(255, 255, 255, 0.2);
+
+  font-family: var(--font-mono);
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  color: rgba(255, 255, 255, 0.9);
+  background-color: var(--color-bg-primary);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+}
+
+body {
+  background-color: var(--color-bg-primary);
+  background-image:
+    linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 0%,
+    rgba(15, 23, 42, 0.7) 100%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-bg-tertiary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-neon-blue);
+}
+
+/* 通用组件样式 */
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-display font-semibold transition-all duration-200 border-2 cursor-pointer;
+  }
+
+  .btn-primary {
+    @apply bg-neon-blue border-neon-blue text-white hover:bg-neon-blue/80 hover:shadow-neon-blue active:scale-95;
+  }
+
+  .btn-success {
+    @apply bg-neon-green border-neon-green text-white hover:bg-neon-green/80 hover:shadow-neon-green active:scale-95;
+  }
+
+  .btn-warning {
+    @apply bg-neon-orange border-neon-orange text-white hover:bg-neon-orange/80 hover:shadow-neon-orange active:scale-95;
+  }
+
+  .btn-danger {
+    @apply bg-neon-red border-neon-red text-white hover:bg-neon-red/80 hover:shadow-neon-red active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply bg-transparent border-neon-blue text-neon-blue hover:bg-neon-blue/20 active:scale-95;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent border-border-moderate text-white/70 hover:border-neon-blue hover:text-neon-blue active:scale-95;
+  }
+
+  .card {
+    @apply bg-background-secondary rounded-xl border border-border-subtle shadow-card overflow-hidden;
+  }
+
+  .card-hover {
+    @apply hover:border-neon-blue/50 hover:shadow-neon-blue/30 transition-all duration-300;
+  }
+
+  .input {
+    @apply w-full px-4 py-2 bg-background-tertiary border border-border-subtle rounded-lg text-white placeholder-white/40 focus:outline-none focus:border-neon-blue focus:shadow-neon-blue/30 transition-all duration-200;
+  }
+
+  .stat-bar {
+    @apply h-2 bg-background-tertiary rounded-full overflow-hidden;
+  }
+
+  .stat-bar-fill {
+    @apply h-full rounded-full transition-all duration-500 ease-out;
+  }
+
+  .glow-text-blue {
+    text-shadow: 0 0 10px var(--color-neon-blue), 0 0 20px var(--color-neon-blue);
+  }
+
+  .glow-text-green {
+    text-shadow: 0 0 10px var(--color-neon-green), 0 0 20px var(--color-neon-green);
+  }
+
+  .glow-text-orange {
+    text-shadow: 0 0 10px var(--color-neon-orange), 0 0 20px var(--color-neon-orange);
+  }
+
+  .glow-text-red {
+    text-shadow: 0 0 10px var(--color-neon-red), 0 0 20px var(--color-neon-red);
+  }
+
+  .glow-text-purple {
+    text-shadow: 0 0 10px var(--color-neon-purple), 0 0 20px var(--color-neon-purple);
+  }
+
+  .rarity-border-common {
+    @apply border-rarity-common;
+  }
+
+  .rarity-border-uncommon {
+    @apply border-rarity-uncommon;
+  }
+
+  .rarity-border-rare {
+    @apply border-rarity-rare;
+  }
+
+  .rarity-border-epic {
+    @apply border-rarity-epic animate-glow-epic;
+  }
+
+  .rarity-border-legendary {
+    @apply border-rarity-legendary animate-glow-legendary;
+  }
+
+  .hex-slot {
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  }
+}
+
+/* 工具类 */
+@layer utilities {
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+
+  .preserve-3d {
+    transform-style: preserve-3d;
+  }
+
+  .backface-hidden {
+    backface-visibility: hidden;
+  }
+
+  .rotate-y-180 {
+    transform: rotateY(180deg);
+  }
+
+  .text-shadow-neon {
+    text-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+}
