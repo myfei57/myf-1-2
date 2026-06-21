@@ -10,6 +10,9 @@ import type {
   RepairRecord,
   AssemblyPlan,
   GameConfig,
+  MutationEnvironment,
+  IncubationSlot,
+  IncubationRecord,
 } from '../types';
 import {
   DEFAULT_CONFIG,
@@ -24,6 +27,7 @@ import {
   calculateRobotStats as calcStats,
   calculateAdaptability as calcAdapt,
   clamp,
+  generateIncubationResult,
 } from '../utils/helpers';
 
 const EMPTY_SELECTED_PARTS: Record<PartType, Part | null> = {
@@ -33,6 +37,21 @@ const EMPTY_SELECTED_PARTS: Record<PartType, Part | null> = {
   leg: null,
   core: null,
   tool: null,
+};
+
+const createInitialSlots = (): IncubationSlot[] => {
+  const environments: MutationEnvironment[] = ['heat', 'cold', 'magnetic', 'humid', 'dust'];
+  return environments.map((env) => ({
+    id: `slot-${env}`,
+    environment: env,
+    partId: null,
+    partSnapshot: null,
+    startTime: null,
+    durationSeconds: 0,
+    materialsConsumed: 0,
+    isRunning: false,
+    isCompleted: false,
+  }));
 };
 
 export const useGameStore = create<Store>()(
@@ -47,6 +66,8 @@ export const useGameStore = create<Store>()(
       assemblyPlans: [],
       config: DEFAULT_CONFIG,
       selectedParts: { ...EMPTY_SELECTED_PARTS },
+      incubationSlots: createInitialSlots(),
+      incubationRecords: [],
 
       addPart: (part) => set((state) => ({ parts: [...state.parts, part] })),
 
@@ -296,7 +317,179 @@ export const useGameStore = create<Store>()(
           repairRecords: [],
           assemblyPlans: [],
           selectedParts: { ...EMPTY_SELECTED_PARTS },
+          incubationSlots: createInitialSlots(),
+          incubationRecords: [],
         }),
+
+      startIncubation: (slotId, partId, environment) => {
+        const state = get();
+        const part = state.parts.find((p) => p.id === partId);
+        const slot = state.incubationSlots.find((s) => s.id === slotId);
+
+        if (!part || !slot) return false;
+        if (slot.isRunning || slot.isCompleted) return false;
+        if (slot.environment !== environment) return false;
+
+        const envConfig = state.config.incubation.environments[environment];
+        const totalCost = Math.ceil(envConfig.materialCostPerSecond * envConfig.baseDurationSeconds);
+
+        if (state.materials < totalCost) return false;
+
+        const spent = state.spendMaterials(totalCost);
+        if (!spent) return false;
+
+        const runningCount = state.incubationSlots.filter((s) => s.isRunning).length;
+        if (runningCount >= state.config.incubation.maxConcurrentIncubations) {
+          state.addMaterials(totalCost);
+          return false;
+        }
+
+        set((s) => ({
+          parts: s.parts.filter((p) => p.id !== partId),
+          incubationSlots: s.incubationSlots.map((s2) =>
+            s2.id === slotId
+              ? {
+                  ...s2,
+                  partId,
+                  partSnapshot: {
+                    ...part,
+                    compatibility: [...part.compatibility],
+                    mutations: [...part.mutations],
+                  },
+                  startTime: Date.now(),
+                  durationSeconds: envConfig.baseDurationSeconds,
+                  materialsConsumed: totalCost,
+                  isRunning: true,
+                  isCompleted: false,
+                }
+              : s2
+          ),
+        }));
+
+        return true;
+      },
+
+      cancelIncubation: (slotId) => {
+        const state = get();
+        const slot = state.incubationSlots.find((s) => s.id === slotId);
+
+        if (!slot || !slot.partId || !slot.startTime) {
+          return { partReturned: false, materialsRefunded: 0 };
+        }
+
+        const elapsed = (Date.now() - slot.startTime) / 1000;
+        const progress = Math.min(1, elapsed / slot.durationSeconds);
+        const usedMaterials = Math.ceil(slot.materialsConsumed * progress);
+        const refund = slot.materialsConsumed - usedMaterials;
+
+        if (refund > 0) {
+          state.addMaterials(refund);
+        }
+
+        if (slot.partSnapshot) {
+          state.addPart({ ...slot.partSnapshot });
+        }
+
+        set((s) => ({
+          incubationSlots: s.incubationSlots.map((s2) =>
+            s2.id === slotId
+              ? {
+                  ...s2,
+                  partId: null,
+                  partSnapshot: null,
+                  startTime: null,
+                  durationSeconds: 0,
+                  materialsConsumed: 0,
+                  isRunning: false,
+                  isCompleted: false,
+                }
+              : s2
+          ),
+        }));
+
+        return { partReturned: !!slot.partSnapshot, materialsRefunded: refund };
+      },
+
+      collectIncubationResult: (slotId) => {
+        const state = get();
+        const slot = state.incubationSlots.find((s) => s.id === slotId);
+
+        if (!slot || !slot.isCompleted || !slot.partSnapshot) {
+          return { success: false, result: null, part: null };
+        }
+
+        const { result, mutatedPart } = generateIncubationResult(
+          slot.partSnapshot,
+          slot.environment,
+          state.config
+        );
+
+        state.addPart(mutatedPart);
+
+        const success =
+          result.outcome.some((o) => o !== 'durability_lost' && o !== 'no_change') ||
+          result.traitsGained.some((t) => t.isPositive);
+
+        const record: IncubationRecord = {
+          id: generateId(),
+          partId: mutatedPart.id,
+          partName: slot.partSnapshot.name,
+          environment: slot.environment,
+          startTime: slot.startTime!,
+          endTime: Date.now(),
+          durationSeconds: slot.durationSeconds,
+          materialsUsed: slot.materialsConsumed,
+          result,
+          success,
+        };
+        state.addIncubationRecord(record);
+
+        set((s) => ({
+          incubationSlots: s.incubationSlots.map((s2) =>
+            s2.id === slotId
+              ? {
+                  ...s2,
+                  partId: null,
+                  partSnapshot: null,
+                  startTime: null,
+                  durationSeconds: 0,
+                  materialsConsumed: 0,
+                  isRunning: false,
+                  isCompleted: false,
+                }
+              : s2
+          ),
+        }));
+
+        return { success: true, result, part: mutatedPart };
+      },
+
+      tickIncubations: () => {
+        const state = get();
+        const now = Date.now();
+        let hasChanges = false;
+
+        const updatedSlots = state.incubationSlots.map((slot) => {
+          if (slot.isRunning && slot.startTime && !slot.isCompleted) {
+            const elapsed = (now - slot.startTime) / 1000;
+            if (elapsed >= slot.durationSeconds) {
+              hasChanges = true;
+              return { ...slot, isRunning: false, isCompleted: true };
+            }
+          }
+          return slot;
+        });
+
+        if (hasChanges) {
+          set({ incubationSlots: updatedSlots });
+        }
+      },
+
+      addIncubationRecord: (record) =>
+        set((state) => ({
+          incubationRecords: [record, ...state.incubationRecords] })),
+
+      clearIncubationRecords: () => set({ incubationRecords: [] }),
     }),
     {
       name: 'robot-workshop-storage',
@@ -309,6 +502,8 @@ export const useGameStore = create<Store>()(
         repairRecords: state.repairRecords,
         assemblyPlans: state.assemblyPlans,
         config: state.config,
+        incubationSlots: state.incubationSlots,
+        incubationRecords: state.incubationRecords,
       }),
     }
   )

@@ -6,6 +6,11 @@ import type {
   Robot,
   Mission,
   GameConfig,
+  MutationEnvironment,
+  MutationTrait,
+  MutationTraitConfig,
+  IncubationResult,
+  EnvironmentConfig,
 } from '../types';
 import { PART_TEMPLATES } from '../data/defaultConfig';
 
@@ -84,6 +89,8 @@ export function generateRandomPart(config: GameConfig, minRarity?: Rarity): Part
     maxDurability: Math.floor(baseDurability * multiplier),
     description: template.description,
     icon: type,
+    mutations: [],
+    mutationCount: 0,
   };
 }
 
@@ -250,4 +257,227 @@ export function getRarityBorderClass(rarity: Rarity): string {
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+const SET_BONUS_KEYS = ['industrial', 'stealth', 'combat', 'medical'];
+
+export function getAvailableTraitsForEnvironment(
+  config: GameConfig,
+  environment: MutationEnvironment,
+  partRarity: Rarity
+): MutationTraitConfig[] {
+  return config.incubation.mutationTraits.filter((trait) => {
+    if (!trait.environments.includes(environment)) return false;
+    if (trait.rarityRequired) {
+      const requiredIdx = RARITY_ORDER.indexOf(trait.rarityRequired);
+      const partIdx = RARITY_ORDER.indexOf(partRarity);
+      if (partIdx < requiredIdx) return false;
+    }
+    return true;
+  });
+}
+
+export function selectRandomTrait(
+  traits: MutationTraitConfig[],
+  positiveBias: number
+): MutationTraitConfig | null {
+  if (traits.length === 0) return null;
+
+  const positive = traits.filter((t) => t.isPositive);
+  const negative = traits.filter((t) => !t.isPositive);
+
+  const usePositive = Math.random() < positiveBias;
+  const pool = usePositive && positive.length > 0 ? positive : negative.length > 0 ? negative : traits;
+
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+export function upgradeRarity(current: Rarity): Rarity | null {
+  const idx = RARITY_ORDER.indexOf(current);
+  if (idx >= RARITY_ORDER.length - 1) return null;
+  return RARITY_ORDER[idx + 1];
+}
+
+export function applyTraitToPart(part: Part, trait: MutationTrait): Part {
+  const newPart = { ...part, mutations: [...part.mutations, trait], mutationCount: part.mutationCount + 1 };
+
+  switch (trait.effect) {
+    case 'weight':
+      newPart.weight = Math.max(1, part.weight + trait.value);
+      break;
+    case 'energy':
+      newPart.energy = Math.max(1, part.energy + trait.value);
+      break;
+    case 'skillSlots':
+      newPart.skillSlots = Math.max(0, part.skillSlots + trait.value);
+      break;
+    case 'durability':
+      newPart.durability = clamp(part.durability + trait.value, 0, newPart.maxDurability);
+      break;
+    case 'maxDurability':
+      newPart.maxDurability = Math.max(1, part.maxDurability + trait.value);
+      newPart.durability = Math.min(newPart.durability, newPart.maxDurability);
+      break;
+    case 'compatibility':
+      const newCompat = new Set(part.compatibility);
+      PART_TYPES.forEach((t) => {
+        if (Math.random() < Math.abs(trait.value) / PART_TYPES.length) {
+          if (trait.value > 0) {
+            newCompat.add(t);
+          } else {
+            newCompat.delete(t);
+          }
+        }
+      });
+      newPart.compatibility = Array.from(newCompat);
+      break;
+  }
+
+  return newPart;
+}
+
+export function generateIncubationResult(
+  part: Part,
+  environment: MutationEnvironment,
+  config: GameConfig
+): { result: IncubationResult; mutatedPart: Part } {
+  const envConfig: EnvironmentConfig = config.incubation.environments[environment];
+  const outcome: IncubationResult['outcome'] = [];
+  const traitsGained: MutationTrait[] = [];
+  const traitsLost: MutationTrait[] = [];
+  const compatibilityAdded: PartType[] = [];
+  const compatibilityRemoved: PartType[] = [];
+  let durabilityLost = 0;
+  let maxDurabilityChanged = 0;
+  const setBonusChanged = { from: part.setBonus, to: part.setBonus };
+  let rarityUpgraded = false;
+  let newRarity: Rarity | null = null;
+
+  let mutatedPart: Part = { ...part, compatibility: [...part.compatibility], mutations: [...part.mutations] };
+
+  if (Math.random() < envConfig.mutationChance) {
+    const available = getAvailableTraitsForEnvironment(config, environment, part.rarity);
+    const numTraits = Math.random() < 0.3 ? 2 : 1;
+
+    for (let i = 0; i < numTraits; i++) {
+      const selected = selectRandomTrait(available, envConfig.positiveTraitBias);
+      if (selected) {
+        const trait: MutationTrait = {
+          id: `${selected.id}_${generateId().slice(0, 8)}`,
+          name: selected.name,
+          description: selected.description,
+          effect: selected.effect,
+          value: selected.value,
+          isPositive: selected.isPositive,
+          icon: selected.icon,
+        };
+        traitsGained.push(trait);
+        mutatedPart = applyTraitToPart(mutatedPart, trait);
+      }
+    }
+
+    if (traitsGained.length > 0) {
+      outcome.push('trait_gained');
+    }
+  }
+
+  if (Math.random() < envConfig.durabilityLossChance) {
+    const lossPercent = (Math.random() * envConfig.maxDurabilityLossPercent) / 100;
+    durabilityLost = Math.floor(part.maxDurability * lossPercent);
+    mutatedPart.durability = clamp(mutatedPart.durability - durabilityLost, 0, mutatedPart.maxDurability);
+    if (durabilityLost > 0) {
+      outcome.push('durability_lost');
+    }
+  }
+
+  if (Math.random() < envConfig.compatibilityChangeChance) {
+    const originalCompat = new Set(part.compatibility);
+    const newCompat = new Set(mutatedPart.compatibility);
+    const changeCount = Math.floor(Math.random() * 2) + 1;
+
+    for (let i = 0; i < changeCount; i++) {
+      const targetType = PART_TYPES[Math.floor(Math.random() * PART_TYPES.length)];
+      if (Math.random() < 0.6) {
+        if (!newCompat.has(targetType) && !originalCompat.has(targetType)) {
+          newCompat.add(targetType);
+          compatibilityAdded.push(targetType);
+        }
+      } else {
+        if (newCompat.has(targetType)) {
+          newCompat.delete(targetType);
+          if (originalCompat.has(targetType)) {
+            compatibilityRemoved.push(targetType);
+          }
+        }
+      }
+    }
+
+    mutatedPart.compatibility = Array.from(newCompat);
+
+    if (compatibilityAdded.length > 0 || compatibilityRemoved.length > 0) {
+      outcome.push('compatibility_changed');
+    }
+  }
+
+  if (Math.random() < config.incubation.rarityUpgradeChance && part.rarity !== 'legendary') {
+    const upgraded = upgradeRarity(part.rarity);
+    if (upgraded) {
+      newRarity = upgraded;
+      mutatedPart.rarity = upgraded;
+      rarityUpgraded = true;
+      outcome.push('rarity_upgrade');
+    }
+  }
+
+  if (Math.random() < config.incubation.setBonusChangeChance) {
+    const currentSetIdx = part.setBonus ? SET_BONUS_KEYS.indexOf(part.setBonus) : -1;
+    const availableSets = SET_BONUS_KEYS.filter((_, i) => i !== currentSetIdx);
+    if (Math.random() < 0.5 && availableSets.length > 0) {
+      const newSet = availableSets[Math.floor(Math.random() * availableSets.length)];
+      setBonusChanged.to = newSet;
+      mutatedPart.setBonus = newSet;
+    } else if (part.setBonus) {
+      setBonusChanged.to = null;
+      mutatedPart.setBonus = null;
+    }
+    if (setBonusChanged.from !== setBonusChanged.to) {
+      outcome.push('set_bonus_changed');
+    }
+  }
+
+  if (outcome.length === 0) {
+    outcome.push('no_change');
+  }
+
+  const result: IncubationResult = {
+    outcome,
+    traitsGained,
+    traitsLost,
+    compatibilityAdded,
+    compatibilityRemoved,
+    durabilityLost,
+    maxDurabilityChanged,
+    setBonusChanged,
+    rarityUpgraded,
+    newRarity,
+  };
+
+  return { result, mutatedPart };
+}
+
+export function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  if (mins > 0) {
+    return `${mins}分${secs.toString().padStart(2, '0')}秒`;
+  }
+  return `${secs}秒`;
+}
+
+export function getRiskLevelLabel(level: number): { label: string; color: string } {
+  if (level <= 1) return { label: '低风险', color: 'text-neon-green' };
+  if (level <= 2) return { label: '较低风险', color: 'text-neon-blue' };
+  if (level <= 3) return { label: '中等风险', color: 'text-neon-orange' };
+  if (level <= 4) return { label: '高风险', color: 'text-neon-red' };
+  return { label: '极高风险', color: 'text-rarity-legendary' };
 }

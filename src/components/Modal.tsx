@@ -8,6 +8,7 @@ interface ModalProps {
   title: string;
   children: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  actions?: ReactNode;
 }
 
 const sizeClasses = {
@@ -17,7 +18,7 @@ const sizeClasses = {
   xl: 'max-w-4xl',
 };
 
-export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, size = 'md', actions }: ModalProps) {
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -52,16 +53,19 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             className={`relative w-full ${sizeClasses[size]} card p-6 z-10`}
           >
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-xl font-bold text-neon-blue">
+            <div className="flex items-center justify-between mb-4 gap-3">
+              <h2 className="font-display text-xl font-bold text-neon-blue truncate">
                 {title}
               </h2>
-              <button
-                onClick={onClose}
-                className="p-1 rounded-lg hover:bg-white/10 transition-colors text-white/50 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {actions}
+                <button
+                  onClick={onClose}
+                  className="p-1 rounded-lg hover:bg-white/10 transition-colors text-white/50 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             {children}
           </motion.div>

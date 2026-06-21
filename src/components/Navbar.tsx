@@ -9,12 +9,14 @@ import {
   GitCompare,
   Settings,
   Bot,
+  Sparkles,
 } from 'lucide-react';
 import { ResourceBar } from './ResourceBar';
 
 const navItems = [
   { path: '/', label: '盲盒开盒', icon: Package },
   { path: '/inventory', label: '零件仓库', icon: Boxes },
+  { path: '/incubation', label: '变异孵化', icon: Sparkles },
   { path: '/assembly', label: '组装车间', icon: Wrench },
   { path: '/missions', label: '任务派遣', icon: Swords },
   { path: '/repair', label: '维修中心', icon: Heart },

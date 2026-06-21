@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Navbar } from './components/Navbar';
 import { BlindBoxPage } from './pages/BlindBoxPage';
 import { InventoryPage } from './pages/InventoryPage';
+import { IncubationPage } from './pages/IncubationPage';
 import { AssemblyPage } from './pages/AssemblyPage';
 import { MissionsPage } from './pages/MissionsPage';
 import { RepairPage } from './pages/RepairPage';
@@ -17,6 +18,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<BlindBoxPage />} />
             <Route path="/inventory" element={<InventoryPage />} />
+            <Route path="/incubation" element={<IncubationPage />} />
             <Route path="/assembly" element={<AssemblyPage />} />
             <Route path="/missions" element={<MissionsPage />} />
             <Route path="/repair" element={<RepairPage />} />

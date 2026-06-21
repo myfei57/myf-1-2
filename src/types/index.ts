@@ -4,6 +4,22 @@ export type PartType = 'head' | 'body' | 'arm' | 'leg' | 'core' | 'tool';
 
 export type MissionType = 'transport' | 'cleaning' | 'rescue' | 'combat';
 
+export type MutationEnvironment = 'heat' | 'cold' | 'magnetic' | 'humid' | 'dust';
+
+export type MutationEffectType = 'weight' | 'energy' | 'skillSlots' | 'durability' | 'maxDurability' | 'compatibility' | 'setBonus';
+
+export type MutationOutcomeType = 'trait_gained' | 'compatibility_changed' | 'durability_lost' | 'set_bonus_changed' | 'rarity_upgrade' | 'no_change';
+
+export interface MutationTrait {
+  id: string;
+  name: string;
+  description: string;
+  effect: MutationEffectType;
+  value: number;
+  isPositive: boolean;
+  icon: string;
+}
+
 export interface Part {
   id: string;
   name: string;
@@ -18,6 +34,84 @@ export interface Part {
   maxDurability: number;
   description: string;
   icon: string;
+  mutations: MutationTrait[];
+  mutationCount: number;
+}
+
+export interface MutationTraitConfig {
+  id: string;
+  name: string;
+  description: string;
+  effect: MutationEffectType;
+  value: number;
+  isPositive: boolean;
+  icon: string;
+  environments: MutationEnvironment[];
+  rarityRequired?: Rarity;
+}
+
+export interface EnvironmentConfig {
+  id: MutationEnvironment;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  bgColor: string;
+  glowColor: string;
+  materialCostPerSecond: number;
+  baseDurationSeconds: number;
+  mutationChance: number;
+  riskLevel: number;
+  durabilityLossChance: number;
+  maxDurabilityLossPercent: number;
+  compatibilityChangeChance: number;
+  positiveTraitBias: number;
+}
+
+export interface IncubationConfig {
+  environments: Record<MutationEnvironment, EnvironmentConfig>;
+  mutationTraits: MutationTraitConfig[];
+  maxConcurrentIncubations: number;
+  rarityUpgradeChance: number;
+  setBonusChangeChance: number;
+}
+
+export interface IncubationSlot {
+  id: string;
+  environment: MutationEnvironment;
+  partId: string | null;
+  partSnapshot: Part | null;
+  startTime: number | null;
+  durationSeconds: number;
+  materialsConsumed: number;
+  isRunning: boolean;
+  isCompleted: boolean;
+}
+
+export interface IncubationResult {
+  outcome: MutationOutcomeType[];
+  traitsGained: MutationTrait[];
+  traitsLost: MutationTrait[];
+  compatibilityAdded: PartType[];
+  compatibilityRemoved: PartType[];
+  durabilityLost: number;
+  maxDurabilityChanged: number;
+  setBonusChanged: { from: string | null; to: string | null };
+  rarityUpgraded: boolean;
+  newRarity: Rarity | null;
+}
+
+export interface IncubationRecord {
+  id: string;
+  partId: string;
+  partName: string;
+  environment: MutationEnvironment;
+  startTime: number;
+  endTime: number;
+  durationSeconds: number;
+  materialsUsed: number;
+  result: IncubationResult;
+  success: boolean;
 }
 
 export interface Robot {
@@ -134,6 +228,7 @@ export interface GameConfig {
   repairRules: RepairRules;
   missionWeights: Record<MissionType, MissionWeights>;
   recyclingRates: Record<Rarity, number>;
+  incubation: IncubationConfig;
 }
 
 export interface GameState {
@@ -146,6 +241,8 @@ export interface GameState {
   assemblyPlans: AssemblyPlan[];
   config: GameConfig;
   selectedParts: Record<PartType, Part | null>;
+  incubationSlots: IncubationSlot[];
+  incubationRecords: IncubationRecord[];
 }
 
 export interface GameActions {
@@ -184,6 +281,12 @@ export interface GameActions {
   openBlindBox: (type: Rarity, free?: boolean) => Part[];
   loadFromStorage: () => void;
   resetGame: () => void;
+  startIncubation: (slotId: string, partId: string, environment: MutationEnvironment) => boolean;
+  cancelIncubation: (slotId: string) => { partReturned: boolean; materialsRefunded: number };
+  collectIncubationResult: (slotId: string) => { success: boolean; result: IncubationResult | null; part: Part | null };
+  tickIncubations: () => void;
+  addIncubationRecord: (record: IncubationRecord) => void;
+  clearIncubationRecords: () => void;
 }
 
 export type Store = GameState & GameActions;

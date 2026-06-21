@@ -10,6 +10,9 @@ import {
   Gauge,
   Layers,
   Heart,
+  Sparkles,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import type { Part, PartType } from '../types';
 import { useGameStore } from '../store/useGameStore';
@@ -158,7 +161,42 @@ export function PartCard({
                 </div>
               </div>
 
-              <p className="text-xs text-white/40 line-clamp-2">{part.description}</p>
+              <p className="text-xs text-white/40 line-clamp-2 mb-2">{part.description}</p>
+
+              {part.mutations && part.mutations.length > 0 && (
+                <div className="pt-2 border-t border-border-subtle">
+                  <div className="flex items-center gap-1 mb-1.5">
+                    <Sparkles className="w-3 h-3 text-neon-purple" />
+                    <span className="text-xs text-neon-purple font-bold">
+                      变异词条 ({part.mutations.length})
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {part.mutations.slice(0, size === 'lg' ? 99 : 2).map((mutation) => (
+                      <div
+                        key={mutation.id}
+                        className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded ${
+                          mutation.isPositive
+                            ? 'bg-neon-green/10 text-neon-green'
+                            : 'bg-neon-red/10 text-neon-red'
+                        }`}
+                      >
+                        {mutation.isPositive ? (
+                          <ArrowUp className="w-3 h-3 flex-shrink-0" />
+                        ) : (
+                          <ArrowDown className="w-3 h-3 flex-shrink-0" />
+                        )}
+                        <span className="font-bold truncate">{mutation.name}</span>
+                      </div>
+                    ))}
+                    {size !== 'lg' && part.mutations.length > 2 && (
+                      <div className="text-xs text-white/40 px-2">
+                        +{part.mutations.length - 2} 更多...
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </>
           )}
 
