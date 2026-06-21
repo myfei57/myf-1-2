@@ -28,6 +28,7 @@ import {
   calculateAdaptability as calcAdapt,
   clamp,
   generateIncubationResult,
+  normalizePart,
 } from '../utils/helpers';
 
 const EMPTY_SELECTED_PARTS: Record<PartType, Part | null> = {
@@ -52,6 +53,61 @@ const createInitialSlots = (): IncubationSlot[] => {
     isRunning: false,
     isCompleted: false,
   }));
+};
+
+
+
+const migratePersistedState = (persistedState: any, version: number): any => {
+  if (!persistedState) return persistedState;
+
+  const state = { ...persistedState };
+
+  if (!state.parts || !Array.isArray(state.parts)) {
+    state.parts = [];
+  } else {
+    state.parts = state.parts.map(normalizePart);
+  }
+
+  if (state.robots && Array.isArray(state.robots)) {
+    state.robots = state.robots.map((robot: any) => {
+      if (!robot.parts) return robot;
+      const normalizedParts: any = {};
+      (['head', 'body', 'arm', 'leg', 'core', 'tool'] as const).forEach((slot) => {
+        normalizedParts[slot] = robot.parts[slot] ? normalizePart(robot.parts[slot]) : null;
+      });
+      return { ...robot, parts: normalizedParts };
+    });
+  }
+
+  if (state.assemblyPlans && Array.isArray(state.assemblyPlans)) {
+    state.assemblyPlans = state.assemblyPlans.map((plan: any) => {
+      if (!plan.parts) return plan;
+      const normalizedParts: any = {};
+      (['head', 'body', 'arm', 'leg', 'core', 'tool'] as const).forEach((slot) => {
+        normalizedParts[slot] = plan.parts[slot] ? normalizePart(plan.parts[slot]) : null;
+      });
+      return { ...plan, parts: normalizedParts };
+    });
+  }
+
+  if (!state.incubationSlots || !Array.isArray(state.incubationSlots) || state.incubationSlots.length === 0) {
+    state.incubationSlots = createInitialSlots();
+  } else {
+    state.incubationSlots = state.incubationSlots.map((slot: any) => ({
+      ...slot,
+      partSnapshot: slot.partSnapshot ? normalizePart(slot.partSnapshot) : null,
+      isRunning: !!slot.isRunning,
+      isCompleted: !!slot.isCompleted,
+      materialsConsumed: slot.materialsConsumed || 0,
+      durationSeconds: slot.durationSeconds || 0,
+    }));
+  }
+
+  if (!state.incubationRecords || !Array.isArray(state.incubationRecords)) {
+    state.incubationRecords = [];
+  }
+
+  return state;
 };
 
 export const useGameStore = create<Store>()(
@@ -330,6 +386,8 @@ export const useGameStore = create<Store>()(
         if (slot.isRunning || slot.isCompleted) return false;
         if (slot.environment !== environment) return false;
 
+        const normalizedPart = normalizePart(part);
+
         const envConfig = state.config.incubation.environments[environment];
         const totalCost = Math.ceil(envConfig.materialCostPerSecond * envConfig.baseDurationSeconds);
 
@@ -351,11 +409,7 @@ export const useGameStore = create<Store>()(
               ? {
                   ...s2,
                   partId,
-                  partSnapshot: {
-                    ...part,
-                    compatibility: [...part.compatibility],
-                    mutations: [...part.mutations],
-                  },
+                  partSnapshot: normalizePart(normalizedPart),
                   startTime: Date.now(),
                   durationSeconds: envConfig.baseDurationSeconds,
                   materialsConsumed: totalCost,
@@ -387,7 +441,7 @@ export const useGameStore = create<Store>()(
         }
 
         if (slot.partSnapshot) {
-          state.addPart({ ...slot.partSnapshot });
+          state.addPart(normalizePart(slot.partSnapshot));
         }
 
         set((s) => ({
@@ -418,13 +472,16 @@ export const useGameStore = create<Store>()(
           return { success: false, result: null, part: null };
         }
 
+        const normalizedSnapshot = normalizePart(slot.partSnapshot);
+
         const { result, mutatedPart } = generateIncubationResult(
-          slot.partSnapshot,
+          normalizedSnapshot,
           slot.environment,
           state.config
         );
 
-        state.addPart(mutatedPart);
+        const finalPart = normalizePart(mutatedPart);
+        state.addPart(finalPart);
 
         const success =
           result.outcome.some((o) => o !== 'durability_lost' && o !== 'no_change') ||
@@ -432,8 +489,8 @@ export const useGameStore = create<Store>()(
 
         const record: IncubationRecord = {
           id: generateId(),
-          partId: mutatedPart.id,
-          partName: slot.partSnapshot.name,
+          partId: finalPart.id,
+          partName: normalizedSnapshot.name,
           environment: slot.environment,
           startTime: slot.startTime!,
           endTime: Date.now(),
@@ -461,7 +518,7 @@ export const useGameStore = create<Store>()(
           ),
         }));
 
-        return { success: true, result, part: mutatedPart };
+        return { success: true, result, part: finalPart };
       },
 
       tickIncubations: () => {
@@ -493,6 +550,8 @@ export const useGameStore = create<Store>()(
     }),
     {
       name: 'robot-workshop-storage',
+      version: 1,
+      migrate: migratePersistedState,
       partialize: (state) => ({
         parts: state.parts,
         robots: state.robots,

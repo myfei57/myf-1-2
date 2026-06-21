@@ -14,10 +14,11 @@ import type {
 } from '../types';
 import { PART_TEMPLATES } from '../data/defaultConfig';
 
-const PART_TYPES: PartType[] = ['head', 'body', 'arm', 'leg', 'core', 'tool'];
-const RARITY_ORDER: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+export const PART_TYPES: PartType[] = ['head', 'body', 'arm', 'leg', 'core', 'tool'];
+export const RARITY_ORDER: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+export const SET_BONUS_KEYS: string[] = ['industrial', 'stealth', 'combat', 'medical'];
 
-const SET_BONUS_OPTIONS = [null, 'industrial', 'stealth', 'combat', 'medical'];
+const SET_BONUS_OPTIONS = [null, ...SET_BONUS_KEYS];
 
 export function generateId(): string {
   return uuidv4();
@@ -259,7 +260,21 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-const SET_BONUS_KEYS = ['industrial', 'stealth', 'combat', 'medical'];
+export function normalizePart(p: any): Part {
+  if (!p) return p;
+  return {
+    ...p,
+    mutations: Array.isArray(p.mutations) ? p.mutations : [],
+    mutationCount: typeof p.mutationCount === 'number' ? p.mutationCount : (Array.isArray(p.mutations) ? p.mutations.length : 0),
+    compatibility: Array.isArray(p.compatibility) ? [...p.compatibility] : ['head', 'body', 'arm', 'leg', 'core', 'tool'],
+    durability: typeof p.durability === 'number' ? p.durability : (typeof p.maxDurability === 'number' ? p.maxDurability : 50),
+    maxDurability: typeof p.maxDurability === 'number' ? p.maxDurability : (typeof p.durability === 'number' ? p.durability : 50),
+    weight: typeof p.weight === 'number' ? p.weight : 10,
+    energy: typeof p.energy === 'number' ? p.energy : 10,
+    skillSlots: typeof p.skillSlots === 'number' ? p.skillSlots : 0,
+    setBonus: p.setBonus ?? null,
+  };
+}
 
 export function getAvailableTraitsForEnvironment(
   config: GameConfig,
@@ -299,27 +314,36 @@ export function upgradeRarity(current: Rarity): Rarity | null {
 }
 
 export function applyTraitToPart(part: Part, trait: MutationTrait): Part {
-  const newPart = { ...part, mutations: [...part.mutations, trait], mutationCount: part.mutationCount + 1 };
+  const normalized = normalizePart(part);
+  const mutations = Array.isArray(normalized.mutations) ? [...normalized.mutations] : [];
+  const compatibility = Array.isArray(normalized.compatibility) ? [...normalized.compatibility] : [];
+
+  const newPart: Part = {
+    ...normalized,
+    mutations: [...mutations, trait],
+    mutationCount: (normalized.mutationCount || 0) + 1,
+    compatibility: [...compatibility],
+  };
 
   switch (trait.effect) {
     case 'weight':
-      newPart.weight = Math.max(1, part.weight + trait.value);
+      newPart.weight = Math.max(1, (normalized.weight || 0) + trait.value);
       break;
     case 'energy':
-      newPart.energy = Math.max(1, part.energy + trait.value);
+      newPart.energy = Math.max(1, (normalized.energy || 0) + trait.value);
       break;
     case 'skillSlots':
-      newPart.skillSlots = Math.max(0, part.skillSlots + trait.value);
+      newPart.skillSlots = Math.max(0, (normalized.skillSlots || 0) + trait.value);
       break;
     case 'durability':
-      newPart.durability = clamp(part.durability + trait.value, 0, newPart.maxDurability);
+      newPart.durability = clamp((normalized.durability || 0) + trait.value, 0, newPart.maxDurability || 1);
       break;
     case 'maxDurability':
-      newPart.maxDurability = Math.max(1, part.maxDurability + trait.value);
-      newPart.durability = Math.min(newPart.durability, newPart.maxDurability);
+      newPart.maxDurability = Math.max(1, (normalized.maxDurability || 0) + trait.value);
+      newPart.durability = clamp(normalized.durability || 0, 0, newPart.maxDurability);
       break;
     case 'compatibility':
-      const newCompat = new Set(part.compatibility);
+      const newCompat = new Set<string>(newPart.compatibility);
       PART_TYPES.forEach((t) => {
         if (Math.random() < Math.abs(trait.value) / PART_TYPES.length) {
           if (trait.value > 0) {
@@ -329,7 +353,7 @@ export function applyTraitToPart(part: Part, trait: MutationTrait): Part {
           }
         }
       });
-      newPart.compatibility = Array.from(newCompat);
+      newPart.compatibility = Array.from(newCompat) as PartType[];
       break;
   }
 
@@ -341,6 +365,7 @@ export function generateIncubationResult(
   environment: MutationEnvironment,
   config: GameConfig
 ): { result: IncubationResult; mutatedPart: Part } {
+  const normalizedPart = normalizePart(part);
   const envConfig: EnvironmentConfig = config.incubation.environments[environment];
   const outcome: IncubationResult['outcome'] = [];
   const traitsGained: MutationTrait[] = [];
@@ -349,14 +374,18 @@ export function generateIncubationResult(
   const compatibilityRemoved: PartType[] = [];
   let durabilityLost = 0;
   let maxDurabilityChanged = 0;
-  const setBonusChanged = { from: part.setBonus, to: part.setBonus };
+  const setBonusChanged = { from: normalizedPart.setBonus, to: normalizedPart.setBonus as string | null };
   let rarityUpgraded = false;
   let newRarity: Rarity | null = null;
 
-  let mutatedPart: Part = { ...part, compatibility: [...part.compatibility], mutations: [...part.mutations] };
+  let mutatedPart: Part = {
+    ...normalizedPart,
+    compatibility: [...normalizedPart.compatibility],
+    mutations: [...normalizedPart.mutations],
+  };
 
   if (Math.random() < envConfig.mutationChance) {
-    const available = getAvailableTraitsForEnvironment(config, environment, part.rarity);
+    const available = getAvailableTraitsForEnvironment(config, environment, normalizedPart.rarity);
     const numTraits = Math.random() < 0.3 ? 2 : 1;
 
     for (let i = 0; i < numTraits; i++) {
@@ -373,6 +402,7 @@ export function generateIncubationResult(
         };
         traitsGained.push(trait);
         mutatedPart = applyTraitToPart(mutatedPart, trait);
+        mutatedPart = normalizePart(mutatedPart);
       }
     }
 
@@ -383,44 +413,50 @@ export function generateIncubationResult(
 
   if (Math.random() < envConfig.durabilityLossChance) {
     const lossPercent = (Math.random() * envConfig.maxDurabilityLossPercent) / 100;
-    durabilityLost = Math.floor(part.maxDurability * lossPercent);
-    mutatedPart.durability = clamp(mutatedPart.durability - durabilityLost, 0, mutatedPart.maxDurability);
+    durabilityLost = Math.floor((mutatedPart.maxDurability || 50) * lossPercent);
     if (durabilityLost > 0) {
+      mutatedPart.durability = clamp((mutatedPart.durability || 0) - durabilityLost, 0, mutatedPart.maxDurability || 1);
       outcome.push('durability_lost');
     }
   }
 
   if (Math.random() < envConfig.compatibilityChangeChance) {
-    const originalCompat = new Set(part.compatibility);
-    const newCompat = new Set(mutatedPart.compatibility);
+    const originalCompat = new Set<PartType>(normalizedPart.compatibility);
+    const currentCompat = new Set<PartType>(mutatedPart.compatibility);
     const changeCount = Math.floor(Math.random() * 2) + 1;
+    let hasChange = false;
 
     for (let i = 0; i < changeCount; i++) {
       const targetType = PART_TYPES[Math.floor(Math.random() * PART_TYPES.length)];
-      if (Math.random() < 0.6) {
-        if (!newCompat.has(targetType) && !originalCompat.has(targetType)) {
-          newCompat.add(targetType);
-          compatibilityAdded.push(targetType);
+      const shouldAdd = Math.random() < 0.6;
+
+      if (shouldAdd) {
+        if (!currentCompat.has(targetType)) {
+          currentCompat.add(targetType);
+          if (!originalCompat.has(targetType)) {
+            compatibilityAdded.push(targetType);
+          }
+          hasChange = true;
         }
       } else {
-        if (newCompat.has(targetType)) {
-          newCompat.delete(targetType);
+        if (currentCompat.has(targetType)) {
+          currentCompat.delete(targetType);
           if (originalCompat.has(targetType)) {
             compatibilityRemoved.push(targetType);
           }
+          hasChange = true;
         }
       }
     }
 
-    mutatedPart.compatibility = Array.from(newCompat);
-
-    if (compatibilityAdded.length > 0 || compatibilityRemoved.length > 0) {
+    if (hasChange || compatibilityAdded.length > 0 || compatibilityRemoved.length > 0) {
+      mutatedPart.compatibility = Array.from(currentCompat);
       outcome.push('compatibility_changed');
     }
   }
 
-  if (Math.random() < config.incubation.rarityUpgradeChance && part.rarity !== 'legendary') {
-    const upgraded = upgradeRarity(part.rarity);
+  if (Math.random() < config.incubation.rarityUpgradeChance && normalizedPart.rarity !== 'legendary') {
+    const upgraded = upgradeRarity(normalizedPart.rarity);
     if (upgraded) {
       newRarity = upgraded;
       mutatedPart.rarity = upgraded;
@@ -430,17 +466,23 @@ export function generateIncubationResult(
   }
 
   if (Math.random() < config.incubation.setBonusChangeChance) {
-    const currentSetIdx = part.setBonus ? SET_BONUS_KEYS.indexOf(part.setBonus) : -1;
+    const originalSet = normalizedPart.setBonus;
+    const currentSetIdx = originalSet ? SET_BONUS_KEYS.indexOf(originalSet) : -1;
     const availableSets = SET_BONUS_KEYS.filter((_, i) => i !== currentSetIdx);
+    let changed = false;
+
     if (Math.random() < 0.5 && availableSets.length > 0) {
       const newSet = availableSets[Math.floor(Math.random() * availableSets.length)];
       setBonusChanged.to = newSet;
       mutatedPart.setBonus = newSet;
-    } else if (part.setBonus) {
+      changed = true;
+    } else if (originalSet) {
       setBonusChanged.to = null;
       mutatedPart.setBonus = null;
+      changed = true;
     }
-    if (setBonusChanged.from !== setBonusChanged.to) {
+
+    if (changed) {
       outcome.push('set_bonus_changed');
     }
   }
@@ -448,6 +490,8 @@ export function generateIncubationResult(
   if (outcome.length === 0) {
     outcome.push('no_change');
   }
+
+  mutatedPart = normalizePart(mutatedPart);
 
   const result: IncubationResult = {
     outcome,
@@ -457,7 +501,10 @@ export function generateIncubationResult(
     compatibilityRemoved,
     durabilityLost,
     maxDurabilityChanged,
-    setBonusChanged,
+    setBonusChanged: {
+      from: setBonusChanged.from,
+      to: setBonusChanged.to,
+    },
     rarityUpgraded,
     newRarity,
   };
